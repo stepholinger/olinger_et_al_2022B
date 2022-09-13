@@ -913,7 +913,7 @@ def plot_landsat_tsx_and_location(landsat,tsx,backazimuth,rmse_mat,station_grid_
     
     
     
-def plot_imagery_seismic_location(landsat,tsx,st,backazimuth,rmse_mat,station_grid_coords,grid_axes_coords,vlims):
+def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse_mat,station_grid_coords,grid_axes_coords,vlims):
 
     # make figure and axes to plot on
     fig, ax = plt.subplots(figsize=(15,15),dpi=100)
@@ -929,44 +929,62 @@ def plot_imagery_seismic_location(landsat,tsx,st,backazimuth,rmse_mat,station_gr
         ax_image = fig.add_axes(axes_coords)
 
         # overlay multiple landsat images
-        for i in range(len(landsat)):
+        if background[1] == 'landsat':
+            landsat = background[0]
+            for i in range(len(landsat)):
 
-            # read each band
-            landsat_B2 = rasterio.open('data/LANDSAT/'+landsat[i]+'/'+landsat[i]+'_SR_B2_epsg:3245.TIF') #blue
-            landsat_B3 = rasterio.open('data/LANDSAT/'+landsat[i]+'/'+landsat[i]+'_SR_B3_epsg:3245.TIF') #green
-            landsat_B4 = rasterio.open('data/LANDSAT/'+landsat[i]+'/'+landsat[i]+'_SR_B4_epsg:3245.TIF') #red
-            image_B2 = landsat_B2.read(1)
-            image_B3 = landsat_B3.read(1)
-            image_B4 = landsat_B4.read(1)
+                # read each band
+                landsat_B2 = rasterio.open('data/LANDSAT/'+landsat[i]+'/'+landsat[i]+'_SR_B2_epsg:3245.TIF') #blue
+                landsat_B3 = rasterio.open('data/LANDSAT/'+landsat[i]+'/'+landsat[i]+'_SR_B3_epsg:3245.TIF') #green
+                landsat_B4 = rasterio.open('data/LANDSAT/'+landsat[i]+'/'+landsat[i]+'_SR_B4_epsg:3245.TIF') #red
+                image_B2 = landsat_B2.read(1)
+                image_B3 = landsat_B3.read(1)
+                image_B4 = landsat_B4.read(1)
+
+                # crop each band to 99th percentile of brightness
+                image_B2[image_B2 > np.percentile(image_B2,99)] = np.percentile(image_B2,99)
+                image_B3[image_B3 > np.percentile(image_B3,99)] = np.percentile(image_B3,99)
+                image_B4[image_B4 > np.percentile(image_B4,99)] = np.percentile(image_B4,99)
+
+                # combine bands into natural color image
+                image_rgb = np.array([image_B2, image_B3, image_B4]).transpose(1,2,0)
+                normalized_rgb = (image_rgb * (255 / np.max(image_rgb))).astype(np.uint8)
+
+                # get bounds
+                landsat_bounds = landsat_B2.bounds
+                horz_len = landsat_bounds[2]-landsat_bounds[0]
+                vert_len = landsat_bounds[3]-landsat_bounds[1]
+
+                # display image
+                if i == 0:
+                    ax_image.imshow(normalized_rgb,extent=[landsat_bounds[0],landsat_bounds[2],landsat_bounds[1],landsat_bounds[3]],interpolation='none',cmap='gray')
+                else:    
+                    # add alpha channel to image so it can be overlayed
+                    alpha_slice = np.array(normalized_rgb.shape)
+                    alpha_slice[2] = 1
+                    alpha_array = np.zeros(alpha_slice)
+                    alpha_array[np.nonzero(image_B2)[0],np.nonzero(image_B2)[1],0] = 255
+                    normalized_rgba = np.append(normalized_rgb,alpha_array,axis=2).astype(int)
+                    ax_image.imshow(normalized_rgba,extent=[landsat_bounds[0],landsat_bounds[2],landsat_bounds[1],landsat_bounds[3]],interpolation='none',cmap='gray')
+
+        elif background[1] == 'tsx':
+            tsx_background = background[0]
+
+            # read tsx data
+            directory = os.listdir('data/TSX/'+ tsx_background + '/TSX-1.SAR.L1B/')[0]
+            tsx_path = 'data/TSX/'+tsx_background+'/TSX-1.SAR.L1B/'+ directory + '/IMAGEDATA/'
+            raster = rasterio.open(glob.glob(tsx_path + '*epsg:3245.tif')[0])
+            image = raster.read()
 
             # crop each band to 99th percentile of brightness
-            image_B2[image_B2 > np.percentile(image_B2,99)] = np.percentile(image_B2,99)
-            image_B3[image_B3 > np.percentile(image_B3,99)] = np.percentile(image_B3,99)
-            image_B4[image_B4 > np.percentile(image_B4,99)] = np.percentile(image_B4,99)
+            image[image > np.percentile(image,99)] = np.percentile(image,99)
 
-            # combine bands into natural color image
-            image_rgb = np.array([image_B2, image_B3, image_B4]).transpose(1,2,0)
-            normalized_rgb = (image_rgb * (255 / np.max(image_rgb))).astype(np.uint8)
-
-            # get bounds
-            landsat_bounds = landsat_B2.bounds
-            horz_len = landsat_bounds[2]-landsat_bounds[0]
-            vert_len = landsat_bounds[3]-landsat_bounds[1]
-
-            # display image
-            if i == 0:
-                ax_image.imshow(normalized_rgb,extent=[landsat_bounds[0],landsat_bounds[2],landsat_bounds[1],landsat_bounds[3]],interpolation='none')
-            else:    
-                # add alpha channel to image so it can be overlayed
-                alpha_slice = np.array(normalized_rgb.shape)
-                alpha_slice[2] = 1
-                alpha_array = np.zeros(alpha_slice)
-                alpha_array[np.nonzero(image_B2)[0],np.nonzero(image_B2)[1],0] = 255
-                normalized_rgba = np.append(normalized_rgb,alpha_array,axis=2).astype(int)
-                ax_image.imshow(normalized_rgba,extent=[landsat_bounds[0],landsat_bounds[2],landsat_bounds[1],landsat_bounds[3]],interpolation='none')
-
-        # set overall plot bounds based on top landsat image
-        plot_bounds = [landsat_bounds[0]+0.425*horz_len,landsat_bounds[2]-0.35*horz_len,landsat_bounds[1]+0.3*vert_len,landsat_bounds[3]-0.475*vert_len]
+            # plot TSX imagery
+            tsx_bounds = raster.bounds
+            horz_len = tsx_bounds[2]-tsx_bounds[0]
+            vert_len = tsx_bounds[3]-tsx_bounds[1]
+            masked_image = np.ma.masked_where(image[0] == 0, image[0])
+            ax_image.imshow(masked_image,extent=[tsx_bounds[0],tsx_bounds[2],tsx_bounds[1],tsx_bounds[3]],cmap='gray')
 
         # read tsx data
         directory = os.listdir('data/TSX/'+ tsx[j] + '/TSX-1.SAR.L1B/')[0]
@@ -995,8 +1013,8 @@ def plot_imagery_seismic_location(landsat,tsx,st,backazimuth,rmse_mat,station_gr
             grid_y = grid_axes_coords[1]
             cmap = plt.get_cmap('plasma')
             contour_x, contour_y = np.meshgrid(grid_x, grid_y)
-            contours = ax_image.contour(contour_x, contour_y, np.log10(rmse_mat.T),levels=20,cmap=cmap,vmin=0.8,vmax=1.3)
-            ax_image.clabel(contours, colors='k', inline_spacing=-10, fontsize=15)
+            contours = ax_image.contour(contour_x, contour_y, np.log10(rmse_mat.T),levels=20,cmap=cmap,vmin=0.8,vmax=1.3,linewidths=3)
+            ax_image.clabel(contours, colors='k', inline_spacing=-10, fontsize=25)
             axes_coords = np.array([1.2*j+1.05, 0.025, 0.05, 0.95])
             c_axis = fig.add_axes(axes_coords)
             norm = Normalize(vmin=0.8,vmax=1.3)
@@ -1004,8 +1022,8 @@ def plot_imagery_seismic_location(landsat,tsx,st,backazimuth,rmse_mat,station_gr
             sm.set_array([])
             cbar = fig.colorbar(sm, cax=c_axis, orientation='vertical')
             cbar.ax.invert_yaxis()
-            cbar.ax.tick_params(labelsize=15)
-            cbar.ax.set_ylabel('log10(RMSE)',fontsize=25)
+            cbar.ax.tick_params(labelsize=35)
+            cbar.ax.set_ylabel('log10(RMSE)',fontsize=35)
             
             # properly center the polar plot on the array centroid
             array_centroid = np.mean(station_grid_coords,axis=0)
@@ -1018,8 +1036,8 @@ def plot_imagery_seismic_location(landsat,tsx,st,backazimuth,rmse_mat,station_gr
             ax_polar.set_theta_zero_location('N')
             ax_polar.set_theta_direction(-1)
             radius,bins = np.histogram(backazimuth[~np.isnan(backazimuth)]*np.pi/180,bins=np.linspace(0,2*np.pi,37))
-            patches = ax_polar.bar(bins[:-1], radius, zorder=1, align='edge', width=np.diff(bins),facecolor=cmap(1),
-                             edgecolor='black', fill=True, linewidth=1,alpha = .5)
+            patches = ax_polar.bar(bins[:-1], radius, zorder=1, align='edge', width=np.diff(bins),facecolor='white',
+                             edgecolor='black', fill=True, linewidth=2,alpha = .5)
 
             # Remove ylabels for area plots (they are mostly obstructive)
             ax_polar.set_yticks([])
@@ -1044,12 +1062,12 @@ def plot_imagery_seismic_location(landsat,tsx,st,backazimuth,rmse_mat,station_gr
         # set ticks and labels for lat/lon grid
         ax_image.set_xticks(x_lab_pos)
         lonlabels = [str(lon[i]) + '$^\circ$' for i in range(len(lon))]
-        ax_image.set_xticklabels(labels=lonlabels,fontsize=25)
-        ax_image.set_xlabel("Longitude",fontsize=25)
+        ax_image.set_xticklabels(labels=lonlabels,fontsize=35)
+        ax_image.set_xlabel("Longitude",fontsize=35)
         ax_image.set_yticks(y_lab_pos)
         latlabels = [str(lat[i]) + '$^\circ$' for i in range(len(lat))]
-        ax_image.set_yticklabels(labels=latlabels,fontsize=25)
-        ax_image.set_ylabel("Latitude",fontsize=25)
+        ax_image.set_yticklabels(labels=latlabels,fontsize=35)
+        ax_image.set_ylabel("Latitude",fontsize=35)
         ax_image.yaxis.set_label_coords(-0.05, 0.5)
 
         # plot station locations   
@@ -1082,16 +1100,16 @@ def plot_imagery_seismic_location(landsat,tsx,st,backazimuth,rmse_mat,station_gr
         line_x,line_y = transform(p1,p2,np.linspace(-100.15,-100.15,100),np.linspace(-74.74,-74.7,100))
         ax_stats.plot(line_x,line_y,color='k',linewidth = 5)
         ax_stats.scatter(line_x[-1],line_y[-1],marker=(3,0,4),c='k',s=400)
-        ax_stats.text(line_x[-1]-2000,line_y[-1]-3000,"N",color='k',fontsize=25)
+        ax_stats.text(line_x[-1]-2500,line_y[-1]-3000,"N",color='k',fontsize=35)
 
         # add scale bar
         ax_stats.plot([plot_bounds[1]-25000,plot_bounds[1]-15000],[plot_bounds[2]+6000,plot_bounds[2]+6000],color='k',linewidth = 5)
-        ax_stats.text(plot_bounds[1]-22500,plot_bounds[2]+4000,"10 km",color='k',fontsize=25)
+        ax_stats.text(plot_bounds[1]-23000,plot_bounds[2]+3800,"10 km",color='k',fontsize=35)
 
         # add inset figure of antarctica
         if j == 0:
             world = gpd.read_file(gpd.datasets.get_path("naturalearth_lowres"))
-            ax_inset = fig.add_axes([-0.07,0.775,0.275,0.275],projection = ccrs.SouthPolarStereo())
+            ax_inset = fig.add_axes([-0.1,0.8,0.275,0.275],projection = ccrs.SouthPolarStereo())
             ax_inset.set_extent([-180, 180, -90, -65], crs=ccrs.PlateCarree())
             geom = geometry.box(minx=-103,maxx=-99,miny=-75.5,maxy=-74.5)
             ax_inset.add_geometries([geom], crs=ccrs.PlateCarree(), edgecolor='r',facecolor='none', linewidth=1)
@@ -1102,29 +1120,33 @@ def plot_imagery_seismic_location(landsat,tsx,st,backazimuth,rmse_mat,station_gr
         capture_string = '201205'+file.split('201205')[1].split('_')[0]
         capture_datetime = datetime.strptime(capture_string, "%Y%m%dT%H%M%S")
         time_lims.append(capture_datetime)
-        ax_image.set_title(capture_datetime.strftime("%Y-%m-%d %H:%M:%S\n"),fontsize=35)
-        
+        if j == 0:
+            ax_image.set_title(".          TSX data from " + capture_datetime.strftime("%Y-%m-%d %H:%M:%S"),fontsize=45,pad=10)
+        else:
+            ax_image.set_title("TSX data from " + capture_datetime.strftime("%Y-%m-%d %H:%M:%S"),fontsize=45,pad=10)
+
     # display seismic data between two images
     starttime = obspy.UTCDateTime(time_lims[0])
     endtime = obspy.UTCDateTime(time_lims[1])
     num_ticks = (np.floor((endtime-starttime)/3600)+1)/12
     st = st.trim(starttime=starttime,endtime=endtime)
-    ax_seismic = fig.add_axes([0,-0.65,2.2,0.5])
-    ticks = [starttime.datetime + timedelta(seconds=tick*3600) for tick in range(int(num_ticks))]
+    ax_seismic = fig.add_axes([0,-0.625,2.2,0.5])
+    ticks = [starttime.datetime + timedelta(seconds=tick*3600*12) for tick in range(int(num_ticks))]
     times = [starttime.datetime + timedelta(seconds=s/st[0].stats.sampling_rate) for s in range(st[0].stats.npts)]
     ax_seismic.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:00'))
     ax_seismic.set_xticks(ticks)
     ax_seismic.grid(True)
-    ax_seismic.set_ylabel("Velocity (mm/s)",fontsize=25)
-    ax_seismic.tick_params(axis='both', which='major', labelsize=25)
+    ax_seismic.set_ylabel("Velocity (mm/s)",fontsize=35)
+    ax_seismic.tick_params(axis='both', which='major', labelsize=35)
     ax_seismic.set_xlim([starttime,endtime])
-    ax_seismic.set_title(st[0].stats.component + " component seismic data (" + st[0].stats.station + ")",fontsize=35)
-    ax_seismic.plot(times,st[0].data*1000,'k')
+    ax_seismic.set_title("Seismic data from " + time_lims[0].strftime("%Y-%m-%d %H:%M:%S") + " to " + time_lims[1].strftime("%Y-%m-%d %H:%M:%S") + " (" + st[0].stats.station + " " + st[0].stats.component + " component)",fontsize=45,wrap=False)
+    ax_seismic.plot(times,st[0].data*1000,'k',linewidth=3)
+    [x.set_linewidth(1.5) for x in ax_seismic.spines.values()]
     
     # display just the event
-    ax_seismic = fig.add_axes([0,-0.65*2,2.2,0.5])
+    ax_seismic = fig.add_axes([0,-0.625*2,2.2,0.5])
     starttime = obspy.UTCDateTime(2012,5,9,18)
-    starttime = obspy.UTCDateTime(2012,5,9,20)
+    endtime = obspy.UTCDateTime(2012,5,9,20)
     st = st.trim(starttime=starttime,endtime=endtime)
     num_ticks = 5
     ticks = [starttime.datetime + timedelta(seconds=tick*1800) for tick in range(int(num_ticks))]
@@ -1132,11 +1154,12 @@ def plot_imagery_seismic_location(landsat,tsx,st,backazimuth,rmse_mat,station_gr
     ax_seismic.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
     ax_seismic.set_xticks(ticks)
     ax_seismic.grid(True)
-    ax_seismic.set_ylabel("Velocity (mm/s)",fontsize=25)
-    ax_seismic.tick_params(axis='both', which='major', labelsize=25)
+    ax_seismic.set_ylabel("Velocity (mm/s)",fontsize=35)
+    ax_seismic.tick_params(axis='both', which='major', labelsize=35)
     ax_seismic.set_xlim([starttime,endtime])
-    ax_seismic.plot(times,st[0].data*1000,'k')
-
+    ax_seismic.set_title("Seismic data from " + starttime.datetime.strftime("%Y-%m-%d %H:%M:%S") + " to " + endtime.datetime.strftime("%Y-%m-%d %H:%M:%S") + " (" + st[0].stats.station + " " + st[0].stats.component + " component)",fontsize=45)
+    ax_seismic.plot(times,st[0].data*1000,'k',linewidth=3)
+    [x.set_linewidth(1.5) for x in ax_seismic.spines.values()]
     
     # show plot
     plt.tight_layout()
