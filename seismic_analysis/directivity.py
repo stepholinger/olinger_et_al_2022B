@@ -30,8 +30,7 @@ def get_characteristic_frequency(data,fs,band,spectra_method,char_freq_method):
     # calculate spectra using basic fft or welch's method
     if spectra_method == "fft":
         spectra = abs(np.fft.rfft(data))
-        f = np.fft.fftfreq(len(data), d=1/fs)
-        f = f[:len(f)//2+1]
+        f = np.fft.rfftfreq(len(data), d=1/fs)
         power = np.square(spectra)
         psd = power/(f[1]-f[0])
     elif spectra_method == "welch":

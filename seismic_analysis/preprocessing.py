@@ -3,6 +3,7 @@ import glob
 import time
 import obspy
 from obspy.clients.fdsn.mass_downloader import RectangularDomain, Restrictions, MassDownloader
+from scipy.fft import rfft,rfftfreq
 
 
 
@@ -83,3 +84,15 @@ def remove_ir(data_path,band,freq_lims,output_type):
 
         #give some output to check progress
         print("Response removed from " + f + " in " + str(run_time) + " seconds.")
+        
+        
+        
+def taper_and_filter(st,taper,filt_type,freq):
+    st.taper(max_percentage=taper)
+    st.detrend("demean")
+    st.detrend("linear")
+    if filt_type == "bandpass":
+        st.filter(filt_type,freqmax=freq[0],freqmin=freq[1])
+    else:
+        st.filter(filt_type,freq=freq)
+    return st
