@@ -59,7 +59,7 @@ def remove_ir(data_path,band,freq_lims,output_type):
 
         #specify output filename format
         out_path = data_path + "MSEED/no_IR/" + station + "/" + channel + "/" 
-        out_file = out_path + start_date + "." + station + "." + channel + ".no_IR.MSEED"
+        out_file = out_path + start_date + "." + station + "." + channel + "." + output_type + ".no_IR.MSEED"
         if not os.path.exists(out_path):
             os.makedirs(out_path)
 

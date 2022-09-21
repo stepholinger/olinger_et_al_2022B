@@ -26,6 +26,7 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 import matplotlib.dates as mdates
+from matplotlib.patches import Rectangle, ConnectionPatch
 from seismic_analysis.directivity import get_velocity
 import cartopy
 import cartopy.crs as ccrs
@@ -39,7 +40,7 @@ def write_parameters(d):
         
         
 def get_files(l):
-    files = glob.glob(l.data_path + "/PIG2/HHZ/*", recursive=True)
+    files = glob.glob(l.data_path + "/PIG2/HHZ/*"+l.response+"*", recursive=True)
     files = [f.replace("PIG2","PIG*") for f in files]
     files = [f.replace("HHZ","HH*") for f in files]
     files.sort()
@@ -1000,6 +1001,7 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse
         horz_len = tsx_bounds[2]-tsx_bounds[0]
         vert_len = tsx_bounds[3]-tsx_bounds[1]
         masked_image = np.ma.masked_where(image[0] == 0, image[0])
+        ax_image.set_facecolor('k')
         ax_image.imshow(masked_image,extent=[tsx_bounds[0],tsx_bounds[2],tsx_bounds[1],tsx_bounds[3]],cmap='gray',vmin=vlims[j,0], vmax=vlims[j,1])
 
         # get corners of imagery extent
@@ -1035,13 +1037,17 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse
             ax_polar = fig.add_axes([1.2*j+x_pos-width/2,y_pos-width/2,width,width], projection = 'polar')
             ax_polar.set_theta_zero_location('N')
             ax_polar.set_theta_direction(-1)
-            radius,bins = np.histogram(backazimuth[~np.isnan(backazimuth)]*np.pi/180,bins=np.linspace(0,2*np.pi,37))
-            patches = ax_polar.bar(bins[:-1], radius, zorder=1, align='edge', width=np.diff(bins),facecolor='white',
-                             edgecolor='black', fill=True, linewidth=2,alpha = .5)
+            baz = backazimuth[~np.isnan(backazimuth)]*np.pi/180
+            ax_polar.arrow(baz,0,0,1,width=0.05,edgecolor='black',facecolor='black',lw=2,zorder=5)
+            ax_polar.text(-0.5,0.7,r"$\theta$",color='k',fontsize=35)
+#             radius,bins = np.histogram(backazimuth[~np.isnan(backazimuth)]*np.pi/180,bins=np.linspace(0,2*np.pi,37))
+#             patches = ax_polar.bar(bins[:-1], radius, zorder=1, align='edge', width=np.diff(bins),facecolor='white',
+#                              edgecolor='black', fill=True, linewidth=2,alpha = .5)
 
             # Remove ylabels for area plots (they are mostly obstructive)
             ax_polar.set_yticks([])
             ax_polar.axis('off')
+            
             
         # define, transform, and plot lat/lon grid
         lat = np.arange(-73,-76,-0.25)
@@ -1109,10 +1115,10 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse
         # add inset figure of antarctica
         if j == 0:
             world = gpd.read_file(gpd.datasets.get_path("naturalearth_lowres"))
-            ax_inset = fig.add_axes([-0.1,0.8,0.275,0.275],projection = ccrs.SouthPolarStereo())
+            ax_inset = fig.add_axes([-0.15,0.7,0.35,0.35],projection = ccrs.SouthPolarStereo())
             ax_inset.set_extent([-180, 180, -90, -65], crs=ccrs.PlateCarree())
-            geom = geometry.box(minx=-103,maxx=-99,miny=-75.5,maxy=-74.5)
-            ax_inset.add_geometries([geom], crs=ccrs.PlateCarree(), edgecolor='r',facecolor='none', linewidth=1)
+            geom = geometry.box(minx=-104,maxx=-98,miny=-76,maxy=-74)
+            ax_inset.add_geometries([geom], crs=ccrs.PlateCarree(), edgecolor='r',facecolor='none', linewidth=1.5)
             ax_inset.add_feature(cartopy.feature.OCEAN, facecolor='#A8C5DD', edgecolor='none')
 
         # add title
@@ -1121,9 +1127,9 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse
         capture_datetime = datetime.strptime(capture_string, "%Y%m%dT%H%M%S")
         time_lims.append(capture_datetime)
         if j == 0:
-            ax_image.set_title(".          TSX data from " + capture_datetime.strftime("%Y-%m-%d %H:%M:%S"),fontsize=45,pad=10)
+            ax_image.set_title(".          TSX data from " + capture_datetime.strftime("%Y-%m-%d %H:%M"),fontsize=45,pad=10)
         else:
-            ax_image.set_title("TSX data from " + capture_datetime.strftime("%Y-%m-%d %H:%M:%S"),fontsize=45,pad=10)
+            ax_image.set_title("TSX data from " + capture_datetime.strftime("%Y-%m-%d %H:%M"),fontsize=45,pad=10)
 
     # display seismic data between two images
     starttime = obspy.UTCDateTime(time_lims[0])
@@ -1139,27 +1145,50 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse
     ax_seismic.set_ylabel("Velocity (mm/s)",fontsize=35)
     ax_seismic.tick_params(axis='both', which='major', labelsize=35)
     ax_seismic.set_xlim([starttime,endtime])
-    ax_seismic.set_title("Seismic data from " + time_lims[0].strftime("%Y-%m-%d %H:%M:%S") + " to " + time_lims[1].strftime("%Y-%m-%d %H:%M:%S") + " (" + st[0].stats.station + " " + st[0].stats.component + " component)",fontsize=45,wrap=False)
-    ax_seismic.plot(times,st[0].data*1000,'k',linewidth=3)
+    ax_seismic.set_title("Seismic data from " + time_lims[0].strftime("%Y-%m-%d %H:%M") + " to " + time_lims[1].strftime("%Y-%m-%d %H:%M") + " (" + st[0].stats.station + " " + st[0].stats.component + " component)",fontsize=45,wrap=False)
+    ax_seismic.plot(times,st[0].data*1000,'k',linewidth=3,zorder=10)
     [x.set_linewidth(1.5) for x in ax_seismic.spines.values()]
     
+    # highlight event window 
+    starttime = obspy.UTCDateTime(2012,5,9,18)
+    endtime = obspy.UTCDateTime(2012,5,9,20)
+    ylims = ax_seismic.get_ylim()
+    rect = Rectangle((starttime, ylims[0]), endtime-starttime, ylims[1]-ylims[0], linewidth=0, facecolor='r',alpha=0.1,zorder=0)
+    ax_seismic.axvline(starttime,linestyle='--',dashes=(7, 7))
+    ax_seismic.axvline(endtime,linestyle='--',dashes=(7, 7))
+    ax_seismic.add_patch(rect)
+    
     # display just the event
-    ax_seismic = fig.add_axes([0,-0.625*2,2.2,0.5])
+    ax_seismic2 = fig.add_axes([0,-0.625*2,2.2,0.5])
     starttime = obspy.UTCDateTime(2012,5,9,18)
     endtime = obspy.UTCDateTime(2012,5,9,20)
     st = st.trim(starttime=starttime,endtime=endtime)
     num_ticks = 5
     ticks = [starttime.datetime + timedelta(seconds=tick*1800) for tick in range(int(num_ticks))]
     times = [starttime.datetime + timedelta(seconds=s/st[0].stats.sampling_rate) for s in range(st[0].stats.npts)]
-    ax_seismic.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
-    ax_seismic.set_xticks(ticks)
-    ax_seismic.grid(True)
-    ax_seismic.set_ylabel("Velocity (mm/s)",fontsize=35)
-    ax_seismic.tick_params(axis='both', which='major', labelsize=35)
-    ax_seismic.set_xlim([starttime,endtime])
-    ax_seismic.set_title("Seismic data from " + starttime.datetime.strftime("%Y-%m-%d %H:%M:%S") + " to " + endtime.datetime.strftime("%Y-%m-%d %H:%M:%S") + " (" + st[0].stats.station + " " + st[0].stats.component + " component)",fontsize=45)
-    ax_seismic.plot(times,st[0].data*1000,'k',linewidth=3)
-    [x.set_linewidth(1.5) for x in ax_seismic.spines.values()]
+    ax_seismic2.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
+    ax_seismic2.set_xticks(ticks)
+    ax_seismic2.grid(True)
+    ax_seismic2.set_ylabel("Velocity (mm/s)",fontsize=35)
+    ax_seismic2.tick_params(axis='both', which='major', labelsize=35)
+    ax_seismic2.set_xlim([starttime,endtime])
+    ax_seismic2.set_title("Seismic data from " + starttime.datetime.strftime("%Y-%m-%d %H:%M") + " to " + endtime.datetime.strftime("%Y-%m-%d %H:%M") + " (" + st[0].stats.station + " " + st[0].stats.component + " component)",fontsize=45)
+    ax_seismic2.plot(times,st[0].data*1000,'k',linewidth=3)
+    [x.set_linewidth(1.5) for x in ax_seismic2.spines.values()]
+    
+    # draw lines connecting the highlighted area of first data plot to second plot
+    line1_start = [starttime,ax_seismic2.get_ylim()[1]]
+    line1_end = [starttime,ax_seismic.get_ylim()[0]]
+    line2_start = [endtime,ax_seismic2.get_ylim()[1]]
+    line2_end = [endtime,ax_seismic.get_ylim()[0]] 
+    con1 = ConnectionPatch(xyA=line1_start, xyB=line1_end, coordsA='data', coordsB='data',axesA=ax_seismic2,axesB=ax_seismic,linestyle=(5,(7,7)))
+    con2 = ConnectionPatch(xyA=line2_start, xyB=line2_end, coordsA='data', coordsB='data',axesA=ax_seismic2,axesB=ax_seismic,linestyle=(5,(7,7)))
+    ax_seismic2.add_artist(con1)
+    ax_seismic2.add_artist(con2)
+    cons = [con1,con2]
+    for con in cons:
+        con.set_color('k')
+        con.set_linewidth(1.5)
     
     # show plot
     plt.tight_layout()
