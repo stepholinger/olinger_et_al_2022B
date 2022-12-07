@@ -41,8 +41,8 @@ def write_parameters(d):
         
 def get_files(l):
     files = glob.glob(l.data_path + "/PIG2/HHZ/*"+l.response+"*", recursive=True)
-    files = [f.replace("PIG2","PIG*") for f in files]
-    files = [f.replace("HHZ","HH*") for f in files]
+    files = [f.replace("PIG2","*") for f in files]
+    files = [f.replace("HHZ","*H*") for f in files]
     files.sort()
     start_date = l.detection_times[0].strftime("%Y-%m-%d")
     start_index = [s for s in range(len(files)) if start_date in files[s]][0]
@@ -125,11 +125,11 @@ def get_station_lon_lat(xml_path,networks,stations):
 
 
 
-def get_station_crs_locations(station_lon_lat_coords,crs):
+def get_crs_locations(lon_lat_coords,crs):
     # convert station coordinates to x and y and take average station location
     p2 = Proj(crs,preserve_units=False)
     p1 = Proj(proj='latlong',preserve_units=False)
-    [stat_x,stat_y] = transform(p1,p2,station_lon_lat_coords[:,0],station_lon_lat_coords[:,1])
+    [stat_x,stat_y] = transform(p1,p2,lon_lat_coords[:,0],lon_lat_coords[:,1])
     return np.stack((stat_x,stat_y),axis=1)
 
 
@@ -154,10 +154,10 @@ def get_station_angles(l):
 
 def first_observed_arrival(st,l):
     # cross correlate all traces and find station with largest shift
-    channels = ["HHZ","HHN","HHE"]
+    channels = ["Z","N","E"]
     first_stat_vector = []
     for chan in channels:
-        st_chan = st.select(channel=chan)
+        st_chan = st.select(component=chan)
         shifts = np.zeros(len(st_chan))
         corrs = np.zeros(len(st_chan))
         for j in range(len(st_chan)):
@@ -175,6 +175,7 @@ def first_observed_arrival(st,l):
             first_stat = counts[0][0]
     else:
         first_stat = counts[0][0]
+    print(first_stat)
     return first_stat
 
 
@@ -208,7 +209,7 @@ def compute_pca(st,l):
     first_component_vect = np.empty((0,2),"float64")
 
     # get mean amplitude for whole trace (average of both components)
-    horz_data = np.transpose(np.concatenate(([st.select(channel="HHE")[0].data],[st.select(channel="HHN")[0].data])))
+    horz_data = np.transpose(np.concatenate(([st.select(component="E")[0].data],[st.select(component="N")[0].data])))
 
     # itertate through data in windows
     for n in range(l.num_steps):
@@ -233,7 +234,9 @@ def compute_pca(st,l):
                     first_components = correct_pca_distance(pca.components_[0,:],l)
                 if l.pca_correction == "sector":
                     first_components = correct_pca_sector(pca.components_[0,:],l)
-
+                if l.pca_correction == "manual":
+                    first_components = correct_pca_manual(pca.components_[0,:],l)
+                    
                 # save result
                 first_component_vect = np.vstack((first_component_vect,first_components))
 
@@ -360,6 +363,19 @@ def correct_pca_sector(pca_components,l):
 
 
 
+def correct_pca_manual(pca_components,l):
+    # get the backazimuth corresponding to the observed polarization direction
+    baz = 90 - np.arctan2(pca_components[1],pca_components[0])*180/np.pi
+    if baz < 0:
+        baz = baz + 360
+    if l.flip == True:
+        corrected_pca_components = pca_components*-1
+    elif l.flip == False:
+        corrected_pca_components = pca_components 
+    return corrected_pca_components
+
+
+
 def calculate_event_baz(first_component_sums,norms):
     denom = np.sum(norms)
     avg_weighted_x = np.nansum(first_component_sums[:,0])/denom
@@ -411,18 +427,16 @@ def polarization_analysis(l):
 
     # read all available data for the current day
     st = obspy.read(l.f)
-    
     # get stations that are (1) available on current day and (2) within the user-specified list of desired stations
     l.stations = get_stations_to_use(st,l)
-    
+
     # only keep the data from these stations for use in backaziumuth calculations
     st = get_data_to_use(st,l)
     st.filter("bandpass",freqmin=l.freq[0],freqmax=l.freq[1])
 
     # get geometrical parameters for the functional "array", which is made up of only the stations that are available
     l.station_lon_lat_coords = get_station_lon_lat(l.xml_path,l.network,l.stations)
-    l.station_grid_coords = get_station_crs_locations(l.station_lon_lat_coords,l.crs)
-   
+    l.station_grid_coords = get_crs_locations(l.station_lon_lat_coords,l.crs)
     # update array centroid to reflect subset of stations being used for this particular event or keep it fixed
     if l.centroid == "moving":
         l.array_centroid = np.mean(l.station_grid_coords,axis=0)
@@ -503,7 +517,7 @@ def compute_backazimuths(l):
     
     # get centroid for the desired stations
     l.station_lon_lat_coords = get_station_lon_lat(l.xml_path,l.network,l.stations)
-    l.station_grid_coords = get_station_crs_locations(l.station_lon_lat_coords,l.crs)
+    l.station_grid_coords = get_crs_locations(l.station_lon_lat_coords,l.crs)
     l.array_centroid = np.mean(l.station_grid_coords,axis=0)
 
     # get all detection times
@@ -517,8 +531,8 @@ def compute_backazimuths(l):
     
     # make vector of all filenames
     files = get_files(l)
-    
     print("Got all files...\n")
+    
     # construct iterable list of detection parameter objects for imap
     inputs = []
     for f in files:
@@ -914,7 +928,7 @@ def plot_landsat_tsx_and_location(landsat,tsx,backazimuth,rmse_mat,station_grid_
     
     
     
-def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse_mat,station_grid_coords,grid_axes_coords,vlims):
+def plot_imagery_seismic_location(background,tsx,plot_bounds,st,st_high,backazimuth,rmse_mat,station_grid_coords,grid_axes_coords,vlims):
 
     # make figure and axes to plot on
     fig, ax = plt.subplots(figsize=(15,15),dpi=100)
@@ -1024,8 +1038,8 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse
             sm.set_array([])
             cbar = fig.colorbar(sm, cax=c_axis, orientation='vertical')
             cbar.ax.invert_yaxis()
-            cbar.ax.tick_params(labelsize=35)
-            cbar.ax.set_ylabel('log10(RMSE)',fontsize=35)
+            cbar.ax.tick_params(labelsize=45)
+            cbar.ax.set_ylabel('log10(RMSE)',fontsize=45)
             
             # properly center the polar plot on the array centroid
             array_centroid = np.mean(station_grid_coords,axis=0)
@@ -1039,7 +1053,7 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse
             ax_polar.set_theta_direction(-1)
             baz = backazimuth[~np.isnan(backazimuth)]*np.pi/180
             ax_polar.arrow(baz,0,0,1,width=0.05,edgecolor='black',facecolor='black',lw=2,zorder=5)
-            ax_polar.text(-0.5,0.7,r"$\theta$",color='k',fontsize=35)
+            ax_polar.text(-0.7,0.7,r"$\theta$",color='k',fontsize=45)
 #             radius,bins = np.histogram(backazimuth[~np.isnan(backazimuth)]*np.pi/180,bins=np.linspace(0,2*np.pi,37))
 #             patches = ax_polar.bar(bins[:-1], radius, zorder=1, align='edge', width=np.diff(bins),facecolor='white',
 #                              edgecolor='black', fill=True, linewidth=2,alpha = .5)
@@ -1068,12 +1082,12 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse
         # set ticks and labels for lat/lon grid
         ax_image.set_xticks(x_lab_pos)
         lonlabels = [str(lon[i]) + '$^\circ$' for i in range(len(lon))]
-        ax_image.set_xticklabels(labels=lonlabels,fontsize=35)
-        ax_image.set_xlabel("Longitude",fontsize=35)
+        ax_image.set_xticklabels(labels=lonlabels,fontsize=45)
+        ax_image.set_xlabel("Longitude",fontsize=45)
         ax_image.set_yticks(y_lab_pos)
         latlabels = [str(lat[i]) + '$^\circ$' for i in range(len(lat))]
-        ax_image.set_yticklabels(labels=latlabels,fontsize=35)
-        ax_image.set_ylabel("Latitude",fontsize=35)
+        ax_image.set_yticklabels(labels=latlabels,fontsize=45)
+        ax_image.set_ylabel("Latitude",fontsize=45)
         ax_image.yaxis.set_label_coords(-0.05, 0.5)
 
         # plot station locations   
@@ -1106,18 +1120,18 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse
         line_x,line_y = transform(p1,p2,np.linspace(-100.15,-100.15,100),np.linspace(-74.74,-74.7,100))
         ax_stats.plot(line_x,line_y,color='k',linewidth = 5)
         ax_stats.scatter(line_x[-1],line_y[-1],marker=(3,0,4),c='k',s=400)
-        ax_stats.text(line_x[-1]-2500,line_y[-1]-3000,"N",color='k',fontsize=35)
+        ax_stats.text(line_x[-1]-2500,line_y[-1]-3500,"N",color='k',fontsize=45)
 
         # add scale bar
         ax_stats.plot([plot_bounds[1]-25000,plot_bounds[1]-15000],[plot_bounds[2]+6000,plot_bounds[2]+6000],color='k',linewidth = 5)
-        ax_stats.text(plot_bounds[1]-23000,plot_bounds[2]+3800,"10 km",color='k',fontsize=35)
+        ax_stats.text(plot_bounds[1]-24000,plot_bounds[2]+3400,"10 km",color='k',fontsize=45)
 
         # add inset figure of antarctica
         if j == 0:
             world = gpd.read_file(gpd.datasets.get_path("naturalearth_lowres"))
-            ax_inset = fig.add_axes([-0.15,0.7,0.35,0.35],projection = ccrs.SouthPolarStereo())
+            ax_inset = fig.add_axes([-0.155,0.7,0.35,0.35],projection = ccrs.SouthPolarStereo())
             ax_inset.set_extent([-180, 180, -90, -65], crs=ccrs.PlateCarree())
-            geom = geometry.box(minx=-104,maxx=-98,miny=-76,maxy=-74)
+            geom = geometry.box(minx=-104.1,maxx=-98,miny=-76,maxy=-74)
             ax_inset.add_geometries([geom], crs=ccrs.PlateCarree(), edgecolor='r',facecolor='none', linewidth=1.5)
             ax_inset.add_feature(cartopy.feature.OCEAN, facecolor='#A8C5DD', edgecolor='none')
 
@@ -1127,9 +1141,9 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse
         capture_datetime = datetime.strptime(capture_string, "%Y%m%dT%H%M%S")
         time_lims.append(capture_datetime)
         if j == 0:
-            ax_image.set_title(".          TSX data from " + capture_datetime.strftime("%Y-%m-%d %H:%M"),fontsize=45,pad=10)
+            ax_image.set_title(".            A. TSX data at $t=t_1$",fontsize=60,pad=10,loc='left')
         else:
-            ax_image.set_title("TSX data from " + capture_datetime.strftime("%Y-%m-%d %H:%M"),fontsize=45,pad=10)
+            ax_image.set_title("B. TSX data at $t=t_2$",fontsize=60,pad=10,loc='left')
 
     # display seismic data between two images
     starttime = obspy.UTCDateTime(time_lims[0])
@@ -1142,10 +1156,10 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse
     ax_seismic.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:00'))
     ax_seismic.set_xticks(ticks)
     ax_seismic.grid(True)
-    ax_seismic.set_ylabel("Velocity (mm/s)",fontsize=35)
-    ax_seismic.tick_params(axis='both', which='major', labelsize=35)
+    ax_seismic.set_ylabel("Velocity (mm/s)",fontsize=45)
+    ax_seismic.tick_params(axis='both', which='major', labelsize=45)
     ax_seismic.set_xlim([starttime,endtime])
-    ax_seismic.set_title("Seismic data from " + time_lims[0].strftime("%Y-%m-%d %H:%M") + " to " + time_lims[1].strftime("%Y-%m-%d %H:%M") + " (" + st[0].stats.station + " " + st[0].stats.component + " component)",fontsize=45,wrap=False)
+    ax_seismic.set_title("C. PIG2 Z-component data from $t_1$ to $t_2$ (0.001-1 Hz)",fontsize=60,wrap=False,loc='left')
     ax_seismic.plot(times,st[0].data*1000,'k',linewidth=3,zorder=10)
     [x.set_linewidth(1.5) for x in ax_seismic.spines.values()]
     
@@ -1158,22 +1172,24 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse
     ax_seismic.axvline(endtime,linestyle='--',dashes=(7, 7))
     ax_seismic.add_patch(rect)
     
-    # display just the event
+    # display just the event (low frequency)
     ax_seismic2 = fig.add_axes([0,-0.625*2,2.2,0.5])
     starttime = obspy.UTCDateTime(2012,5,9,18)
     endtime = obspy.UTCDateTime(2012,5,9,20)
     st = st.trim(starttime=starttime,endtime=endtime)
-    num_ticks = 5
-    ticks = [starttime.datetime + timedelta(seconds=tick*1800) for tick in range(int(num_ticks))]
+    num_ticks = 9
+    ticks = [starttime.datetime + timedelta(seconds=tick*900) for tick in range(int(num_ticks))]
     times = [starttime.datetime + timedelta(seconds=s/st[0].stats.sampling_rate) for s in range(st[0].stats.npts)]
-    ax_seismic2.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
+    ax_seismic2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    ax_seismic2.set_ylabel("Velocity (mm/s)",fontsize=45)
+    ax_seismic2.tick_params(axis='both', which='major', labelsize=45)
     ax_seismic2.set_xticks(ticks)
     ax_seismic2.grid(True)
-    ax_seismic2.set_ylabel("Velocity (mm/s)",fontsize=35)
-    ax_seismic2.tick_params(axis='both', which='major', labelsize=35)
     ax_seismic2.set_xlim([starttime,endtime])
-    ax_seismic2.set_title("Seismic data from " + starttime.datetime.strftime("%Y-%m-%d %H:%M") + " to " + endtime.datetime.strftime("%Y-%m-%d %H:%M") + " (" + st[0].stats.station + " " + st[0].stats.component + " component)",fontsize=45)
+    ax_seismic2.set_title("D. Rift event seismogram (0.001-1 Hz)",fontsize=60,loc='left')
     ax_seismic2.plot(times,st[0].data*1000,'k',linewidth=3)
+    labels = ["05-09 18:00","18:15","18:30","18:45","19:00","19:15","19:30","19:45","20:00"]
+    ax_seismic2.set_xticklabels(labels)
     [x.set_linewidth(1.5) for x in ax_seismic2.spines.values()]
     
     # draw lines connecting the highlighted area of first data plot to second plot
@@ -1189,7 +1205,293 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,backazimuth,rmse
     for con in cons:
         con.set_color('k')
         con.set_linewidth(1.5)
+        
+    # display just the event (high frequency)
+    ax_seismic3 = fig.add_axes([0,-0.625*3,2.2,0.5])
+    starttime = obspy.UTCDateTime(2012,5,9,18)
+    endtime = starttime + 540
+    st_high = st_high.trim(starttime=starttime,endtime=endtime)
+    ax_seismic3.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    ax_seismic3.set_yticks([-0.01,0,0.01])
+    num_ticks = 11
+    ticks = [starttime.datetime + timedelta(seconds=tick*60) for tick in range(int(num_ticks))]    
+    times = [starttime.datetime + timedelta(seconds=s/st_high[0].stats.sampling_rate) for s in range(st_high[0].stats.npts)]
+    ax_seismic3.set_xticks(ticks)
+    ax_seismic3.grid(True)
+    ax_seismic3.set_ylabel("Velocity (mm/s)",fontsize=45)
+    ax_seismic3.tick_params(axis='both', which='major', labelsize=45)
+    ax_seismic3.set_xlim([starttime,endtime])
+    ax_seismic3.set_title("E. Rift event seismogram (>1 Hz)",fontsize=60,loc='left')
+    ax_seismic3.plot(times,st_high[0].data*1000,'k',linewidth=3)
+    labels = ["05-09 18:00","18:01","18:02","18:03","18:04","18:05","18:06","18:07","18:08","18:09","18:10"]
+    ax_seismic3.set_xticklabels(labels)
+    [x.set_linewidth(1.5) for x in ax_seismic3.spines.values()]
+    
+    # highlight event window
+    ylims = ax_seismic2.get_ylim()
+    rect = Rectangle((starttime, ylims[0]), endtime-starttime, ylims[1]-ylims[0], linewidth=0, facecolor='r',alpha=0.1,zorder=0)
+    ax_seismic2.axvline(starttime,linestyle='--',dashes=(7, 7))
+    ax_seismic2.axvline(endtime,linestyle='--',dashes=(7, 7))
+    ax_seismic2.add_patch(rect)
+    
+    # draw lines connecting the highlighted area of first data plot to second plot
+    line1_start = [starttime,ax_seismic3.get_ylim()[1]]
+    line1_end = [starttime,ax_seismic2.get_ylim()[0]]
+    line2_start = [endtime,ax_seismic3.get_ylim()[1]]
+    line2_end = [endtime,ax_seismic2.get_ylim()[0]] 
+    con1 = ConnectionPatch(xyA=line1_start, xyB=line1_end, coordsA='data', coordsB='data',axesA=ax_seismic3,axesB=ax_seismic2,linestyle=(5,(7,7)))
+    con2 = ConnectionPatch(xyA=line2_start, xyB=line2_end, coordsA='data', coordsB='data',axesA=ax_seismic3,axesB=ax_seismic2,linestyle=(5,(7,7)))
+    ax_seismic3.add_artist(con1)
+    ax_seismic3.add_artist(con2)
+    cons = [con1,con2]
+    for con in cons:
+        con.set_color('k')
+        con.set_linewidth(1.5)
+        
     
     # show plot
-    plt.tight_layout()
+    plt.tight_layout(h_pad = 200)
     plt.savefig('outputs/figures/location.png',bbox_inches="tight")
+    
+    
+def plot_imagery_and_data(background,tsx,plot_bounds,st,st_high,station_grid_coords,grid_axes_coords,vlims):
+
+    # make figure and axes to plot on
+    fig, ax = plt.subplots(figsize=(15,15),dpi=100)
+    ax.axis('off')
+
+    # iterate through tsx scenes
+    time_lims = []
+    for j in range(len(tsx)):
+    
+        # Construct axis to plot on
+        ax.axis('off')
+        axes_coords = np.array([1.2*j, 0, 1, 1])
+        ax_image = fig.add_axes(axes_coords)
+
+        # overlay multiple landsat images
+        if background[1] == 'landsat':
+            landsat = background[0]
+            for i in range(len(landsat)):
+
+                # read each band
+                landsat_B2 = rasterio.open('data/LANDSAT/'+landsat[i]+'/'+landsat[i]+'_SR_B2_epsg:3245.TIF') #blue
+                landsat_B3 = rasterio.open('data/LANDSAT/'+landsat[i]+'/'+landsat[i]+'_SR_B3_epsg:3245.TIF') #green
+                landsat_B4 = rasterio.open('data/LANDSAT/'+landsat[i]+'/'+landsat[i]+'_SR_B4_epsg:3245.TIF') #red
+                image_B2 = landsat_B2.read(1)
+                image_B3 = landsat_B3.read(1)
+                image_B4 = landsat_B4.read(1)
+
+                # crop each band to 99th percentile of brightness
+                image_B2[image_B2 > np.percentile(image_B2,99)] = np.percentile(image_B2,99)
+                image_B3[image_B3 > np.percentile(image_B3,99)] = np.percentile(image_B3,99)
+                image_B4[image_B4 > np.percentile(image_B4,99)] = np.percentile(image_B4,99)
+
+                # combine bands into natural color image
+                image_rgb = np.array([image_B2, image_B3, image_B4]).transpose(1,2,0)
+                normalized_rgb = (image_rgb * (255 / np.max(image_rgb))).astype(np.uint8)
+
+                # get bounds
+                landsat_bounds = landsat_B2.bounds
+                horz_len = landsat_bounds[2]-landsat_bounds[0]
+                vert_len = landsat_bounds[3]-landsat_bounds[1]
+
+                # display image
+                if i == 0:
+                    ax_image.imshow(normalized_rgb,extent=[landsat_bounds[0],landsat_bounds[2],landsat_bounds[1],landsat_bounds[3]],interpolation='none',cmap='gray')
+                else:    
+                    # add alpha channel to image so it can be overlayed
+                    alpha_slice = np.array(normalized_rgb.shape)
+                    alpha_slice[2] = 1
+                    alpha_array = np.zeros(alpha_slice)
+                    alpha_array[np.nonzero(image_B2)[0],np.nonzero(image_B2)[1],0] = 255
+                    normalized_rgba = np.append(normalized_rgb,alpha_array,axis=2).astype(int)
+                    ax_image.imshow(normalized_rgba,extent=[landsat_bounds[0],landsat_bounds[2],landsat_bounds[1],landsat_bounds[3]],interpolation='none',cmap='gray')
+
+        elif background[1] == 'tsx':
+            tsx_background = background[0]
+
+            # read tsx data
+            directory = os.listdir('data/TSX/'+ tsx_background + '/TSX-1.SAR.L1B/')[0]
+            tsx_path = 'data/TSX/'+tsx_background+'/TSX-1.SAR.L1B/'+ directory + '/IMAGEDATA/'
+            raster = rasterio.open(glob.glob(tsx_path + '*epsg:3245.tif')[0])
+            image = raster.read()
+
+            # crop each band to 99th percentile of brightness
+            image[image > np.percentile(image,99)] = np.percentile(image,99)
+
+            # plot TSX imagery
+            tsx_bounds = raster.bounds
+            horz_len = tsx_bounds[2]-tsx_bounds[0]
+            vert_len = tsx_bounds[3]-tsx_bounds[1]
+            masked_image = np.ma.masked_where(image[0] == 0, image[0])
+            ax_image.imshow(masked_image,extent=[tsx_bounds[0],tsx_bounds[2],tsx_bounds[1],tsx_bounds[3]],cmap='gray')
+
+        # read tsx data
+        directory = os.listdir('data/TSX/'+ tsx[j] + '/TSX-1.SAR.L1B/')[0]
+        tsx_path = 'data/TSX/'+tsx[j]+'/TSX-1.SAR.L1B/'+ directory + '/IMAGEDATA/'
+        raster = rasterio.open(glob.glob(tsx_path + '*epsg:3245.tif')[0])
+        image = raster.read()
+
+        # crop each band to 99th percentile of brightness
+        image[image > np.percentile(image,99)] = np.percentile(image,99)
+
+        # plot TSX imagery
+        tsx_bounds = raster.bounds
+        horz_len = tsx_bounds[2]-tsx_bounds[0]
+        vert_len = tsx_bounds[3]-tsx_bounds[1]
+        masked_image = np.ma.masked_where(image[0] == 0, image[0])
+        ax_image.set_facecolor('k')
+        ax_image.imshow(masked_image,extent=[tsx_bounds[0],tsx_bounds[2],tsx_bounds[1],tsx_bounds[3]],cmap='gray',vmin=vlims[j,0], vmax=vlims[j,1])
+
+        # get corners of imagery extent
+        p2 = Proj("EPSG:3245",preserve_units=False)
+        p1 = Proj(proj='latlong',preserve_units=False)
+                      
+        # define, transform, and plot lat/lon grid
+        lat = np.arange(-73,-76,-0.25)
+        lon = np.arange(-98,-104,-0.5)
+        x_lab_pos=[]
+        y_lab_pos=[]
+        line = np.linspace(-110,-90,100)
+        for i in lat:
+            line_x,line_y = transform(p1,p2,line,np.linspace(i,i,100))
+            ax_image.plot(line_x,line_y,linestyle='--',dashes=(7, 10),linewidth=1,c='k',alpha=1)
+            y_lab_pos.append(line_y[np.argmin(np.abs(line_x-plot_bounds[0]))])
+        line = np.linspace(-80,-70,100)
+        for i in lon:
+            line_x,line_y = transform(p1,p2,np.linspace(i,i,100),line)
+            ax_image.plot(line_x,line_y,linestyle='--',dashes=(7, 7),linewidth=1,c='k',alpha=1)
+            x_lab_pos.append(line_x[np.argmin(np.abs(line_y-plot_bounds[2]))])
+
+        # set ticks and labels for lat/lon grid
+        ax_image.set_xticks(x_lab_pos)
+        lonlabels = [str(lon[i]) + '$^\circ$' for i in range(len(lon))]
+        ax_image.set_xticklabels(labels=lonlabels,fontsize=45)
+        ax_image.set_xlabel("Longitude",fontsize=45)
+        ax_image.set_yticks(y_lab_pos)
+        latlabels = [str(lat[i]) + '$^\circ$' for i in range(len(lat))]
+        ax_image.set_yticklabels(labels=latlabels,fontsize=45)
+        ax_image.set_ylabel("Latitude",fontsize=45)
+        ax_image.yaxis.set_label_coords(-0.05, 0.5)
+
+        # plot station locations   
+        axes_coords = np.array([1.2*j, 0, 1, 1])
+        ax_stats = fig.add_axes(axes_coords)
+        ax_stats.scatter(station_grid_coords[:,0],station_grid_coords[:,1],marker="^",c='black',s=400)
+
+        # set axis limits and turn off labels for scatter axis
+        ax_image.set_xlim([plot_bounds[0],plot_bounds[1]])
+        ax_image.set_ylim([plot_bounds[2],plot_bounds[3]])
+        ax_stats.set_xlim([plot_bounds[0],plot_bounds[1]])
+        ax_stats.set_ylim([plot_bounds[2],plot_bounds[3]])
+        ax_stats.axis('off')
+
+    #     # plot grounding line
+    #     grounding_line_file = "data/shapefiles/ASAID_GroundingLine_Continent.shp"
+    #     grounding_lines = gpd.read_file(grounding_line_file)
+    #     pig_mask = geometry.Polygon([(plot_bounds[0],plot_bounds[2]),
+    #                         (plot_bounds[0],plot_bounds[3]),
+    #                         (plot_bounds[1],plot_bounds[3]),
+    #                         (plot_bounds[1],plot_bounds[2]),
+    #                         (plot_bounds[0],plot_bounds[2])])
+    #     pig_gdf = gpd.GeoDataFrame(geometry=[pig_mask],crs="EPSG:3245")
+    #     pig_gdf = pig_gdf.to_crs(grounding_lines.crs)
+    #     pig_grounding_line = grounding_lines.clip(pig_gdf)
+    #     pig_grounding_line=pig_grounding_line.to_crs("EPSG:3245")
+    #     pig_grounding_line.plot(linestyle='--',color='r',ax=ax_image)
+
+        # add North arrow
+        line_x,line_y = transform(p1,p2,np.linspace(-100.15,-100.15,100),np.linspace(-74.74,-74.7,100))
+        ax_stats.plot(line_x,line_y,color='k',linewidth = 5)
+        ax_stats.scatter(line_x[-1],line_y[-1],marker=(3,0,4),c='k',s=400)
+        ax_stats.text(line_x[-1]-2500,line_y[-1]-3500,"N",color='k',fontsize=45)
+
+        # add scale bar
+        ax_stats.plot([plot_bounds[1]-25000,plot_bounds[1]-15000],[plot_bounds[2]+6000,plot_bounds[2]+6000],color='k',linewidth = 5)
+        ax_stats.text(plot_bounds[1]-24000,plot_bounds[2]+3400,"10 km",color='k',fontsize=45)
+
+        # add inset figure of antarctica
+        if j == 0:
+            world = gpd.read_file(gpd.datasets.get_path("naturalearth_lowres"))
+            ax_inset = fig.add_axes([-0.155,0.7,0.35,0.35],projection = ccrs.SouthPolarStereo())
+            ax_inset.set_extent([-180, 180, -90, -65], crs=ccrs.PlateCarree())
+            geom = geometry.box(minx=-104.1,maxx=-98,miny=-76,maxy=-74)
+            ax_inset.add_geometries([geom], crs=ccrs.PlateCarree(), edgecolor='r',facecolor='none', linewidth=1.5)
+            ax_inset.add_feature(cartopy.feature.OCEAN, facecolor='#A8C5DD', edgecolor='none')
+
+        # add title
+        file = os.listdir('data/TSX/' + tsx[j] + '/TSX-1.SAR.L1B/')[0]
+        capture_string = '201205'+file.split('201205')[1].split('_')[0]
+        capture_datetime = datetime.strptime(capture_string, "%Y%m%dT%H%M%S")
+        time_lims.append(capture_datetime)
+        datestring = capture_datetime.strftime("%Y-%m-%d %H:%M")
+        if j == 0:
+            ax_image.set_title(".            A. TSX data at "+datestring,fontsize=60,pad=10,loc='left')
+        else:
+            ax_image.set_title("B. TSX data at "+datestring,fontsize=60,pad=10,loc='left')
+
+    # display seismic data between two images
+    starttime = obspy.UTCDateTime(time_lims[0])
+    endtime = obspy.UTCDateTime(time_lims[1])
+    num_ticks = (np.floor((endtime-starttime)/3600)+1)/12
+    st = st.trim(starttime=starttime,endtime=endtime)
+    ax_seismic = fig.add_axes([0,-0.625,2.2,0.5])
+    ticks = [starttime.datetime + timedelta(seconds=tick*3600*12) for tick in range(int(num_ticks))]
+    times = [starttime.datetime + timedelta(seconds=s/st[0].stats.sampling_rate) for s in range(st[0].stats.npts)]
+    ax_seismic.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:00'))
+    ax_seismic.set_xticks(ticks)
+    ax_seismic.grid(True)
+    ax_seismic.set_ylabel("Velocity (mm/s)",fontsize=45)
+    ax_seismic.tick_params(axis='both', which='major', labelsize=45)
+    ax_seismic.set_xlim([starttime,endtime])
+    ax_seismic.set_title("C. PIG2 Z-component data from $t_1$ to $t_2$ (0.001-1 Hz)",fontsize=60,wrap=False,loc='left')
+    ax_seismic.plot(times,st[0].data*1000,'k',linewidth=3,zorder=10)
+    [x.set_linewidth(1.5) for x in ax_seismic.spines.values()]
+    
+    # display just the event (low frequency)
+    ax_seismic2 = fig.add_axes([0,-0.625*2,2.2,0.5])
+    starttime = obspy.UTCDateTime(2012,5,9,18)
+    endtime = obspy.UTCDateTime(2012,5,9,20)
+    st = st.trim(starttime=starttime,endtime=endtime)
+    num_ticks = 9
+    ticks = [starttime.datetime + timedelta(seconds=tick*900) for tick in range(int(num_ticks))]
+    times = [starttime.datetime + timedelta(seconds=s/st[0].stats.sampling_rate) for s in range(st[0].stats.npts)]
+    ax_seismic2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    ax_seismic2.set_ylabel("Velocity (mm/s)",fontsize=45)
+    ax_seismic2.tick_params(axis='both', which='major', labelsize=45)
+    ax_seismic2.set_xticks(ticks)
+    ax_seismic2.grid(True)
+    ax_seismic2.set_xlim([starttime,endtime])
+    ax_seismic2.set_title("D. Rift event seismogram (0.001-1 Hz)",fontsize=60,loc='left')
+    ax_seismic2.plot(times,st[0].data*1000,'k',linewidth=3)
+    labels = ["05-09 18:00","18:15","18:30","18:45","19:00","19:15","19:30","19:45","20:00"]
+    ax_seismic2.set_xticklabels(labels)
+    [x.set_linewidth(1.5) for x in ax_seismic2.spines.values()]
+
+        
+    # display just the event (high frequency)
+    ax_seismic3 = fig.add_axes([0,-0.625*3,2.2,0.5])
+    starttime = obspy.UTCDateTime(2012,5,9,18)
+    endtime = starttime + 540
+    st_high = st_high.trim(starttime=starttime,endtime=endtime)
+    ax_seismic3.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    ax_seismic3.set_yticks([-0.01,0,0.01])
+    num_ticks = 11
+    ticks = [starttime.datetime + timedelta(seconds=tick*60) for tick in range(int(num_ticks))]    
+    times = [starttime.datetime + timedelta(seconds=s/st_high[0].stats.sampling_rate) for s in range(st_high[0].stats.npts)]
+    ax_seismic3.set_xticks(ticks)
+    ax_seismic3.grid(True)
+    ax_seismic3.set_ylabel("Velocity (mm/s)",fontsize=45)
+    ax_seismic3.tick_params(axis='both', which='major', labelsize=45)
+    ax_seismic3.set_xlim([starttime,endtime])
+    ax_seismic3.set_title("E. Rift event seismogram (>1 Hz)",fontsize=60,loc='left')
+    ax_seismic3.plot(times,st_high[0].data*1000,'k',linewidth=3)
+    labels = ["05-09 18:00","18:01","18:02","18:03","18:04","18:05","18:06","18:07","18:08","18:09","18:10"]
+    ax_seismic3.set_xticklabels(labels)
+    [x.set_linewidth(1.5) for x in ax_seismic3.spines.values()]
+        
+    
+    # show plot
+    plt.tight_layout(h_pad = 200)
+    plt.savefig('outputs/figures/imagery_and_seismic_data.png',bbox_inches="tight")

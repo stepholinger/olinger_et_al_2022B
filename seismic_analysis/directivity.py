@@ -2,8 +2,8 @@ import numpy as np
 import obspy
 from obspy.signal.cross_correlation import correlate, xcorr_max
 from geopy.distance import distance
-
-
+import scipy
+import matplotlib.pyplot as plt
 
 def get_velocity(tr_local,tr_regional):
 
@@ -34,7 +34,7 @@ def get_characteristic_frequency(data,fs,band,spectra_method,char_freq_method):
         power = np.square(spectra)
         psd = power/(f[1]-f[0])
     elif spectra_method == "welch":
-        f,psd=scipy.signal.welch(data,fs=st[0].stats.sampling_rate,nperseg=3000,noverlap=0)
+        f,psd=scipy.signal.welch(data,fs=fs,nperseg=3000,noverlap=0)
         
     # just take the part of the spectra we're interested in
     above_low_cut = [f>band[0]]
@@ -51,4 +51,10 @@ def get_characteristic_frequency(data,fs,band,spectra_method,char_freq_method):
         psd_cumsum = np.cumsum(psd)
         psd_sum = np.sum(psd)
         char_freq = f[np.argmin(np.abs(psd_cumsum-psd_sum/2))]
+#     fig,ax = plt.subplots()
+#     ax.plot(f,psd)
+#     ax.set_xscale('log')
+#     ax.set_yscale('log')
+#     ax.vlines(char_freq,ymin=np.min(psd),ymax=np.max(psd))
+#     plt.show()
     return char_freq

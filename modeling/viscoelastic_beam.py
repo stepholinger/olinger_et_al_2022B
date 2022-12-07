@@ -95,7 +95,15 @@ def asymptotic_solution(xi,H_i,H_w,eta):
     return [s1,s2,s3,s4]
 
 
-    
+def resonance(L,H_i,H_w,eta,mode):
+    xi = (mode+1)*np.pi/L
+    coefficients = get_coefficients(H_i,H_w,xi,eta,[1,1,1,1],1)
+    omega = np.imag(np.roots(coefficients)[2])
+    t = 2*np.pi/omega
+    return t
+
+
+
 def decay_comparison_plot(xi_vect,roots,approximate_solution,T_obs,Q_obs,eta,E,period=np.nan):
     
     # elastic parameters

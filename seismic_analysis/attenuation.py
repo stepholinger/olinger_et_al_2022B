@@ -69,3 +69,29 @@ def plot_e_folding(st,peak_idx,peak_amp,e_fold_amp,e_fold_time,peaks,band,ax):
     ax.set_ylabel("Velocity (m/s)",size=15)
     plt.xlabel("Time",size=15)
     return
+
+
+
+# estimate duration from displacement and velocity seismograms
+def estimate_ringdown(st,method,decay_amp=[]):
+    data = st[0].data
+    if method == "cumulative":
+        cumulative_amp = np.cumsum(np.abs(data)-np.median(np.abs(data)))
+        max_cumulative_amp = np.max(cumulative_amp)
+        end_cumulative_amp = 0.95*max_cumulative_amp
+        duration_bool = cumulative_amp < end_cumulative_amp
+        end_idx = np.where(duration_bool == False)[0][0]
+        duration = end_idx/st[0].stats.sampling_rate
+    if method == "decay":
+        max_amp = np.max(np.abs(data))
+        max_idx = np.argmax(np.abs(data))
+        win_size = 60*st[0].stats.sampling_rate
+        windowed_data = np.reshape(data[:-1],(int(len(data[:-1])/win_size),int(win_size)))
+        windowed_mean_amp = np.mean(np.abs(windowed_data),axis=1)
+        duration_bool = windowed_mean_amp > decay_amp
+        end_idx = np.where(duration_bool == True)[0][-1]
+        duration = (end_idx*win_size - max_idx)/st[0].stats.sampling_rate
+#         plt.plot(np.abs(data))
+#         plt.hlines(decay_amp,0,len(data))
+#         plt.show()
+    return duration

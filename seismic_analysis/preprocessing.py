@@ -92,7 +92,7 @@ def taper_and_filter(st,taper,filt_type,freq):
     st.detrend("demean")
     st.detrend("linear")
     if filt_type == "bandpass":
-        st.filter(filt_type,freqmax=freq[0],freqmin=freq[1])
+        st.filter(filt_type,freqmin=freq[0],freqmax=freq[1])
     else:
         st.filter(filt_type,freq=freq)
     return st

@@ -110,7 +110,7 @@ def binary_threshold(image,thresh):
 
 
 
-def plot_imagery(background,tsx,features,plot_bounds,vlims):
+def plot_fracture_imagery(background,tsx,features,plot_bounds,vlims):
 
     # make figure and axes to plot on
     fig, ax = plt.subplots(figsize=(15,15),dpi=100)

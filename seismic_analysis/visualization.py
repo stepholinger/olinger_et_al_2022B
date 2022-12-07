@@ -68,7 +68,7 @@ def plot_spectrogram(st,starttime,endtime,low_freq,window_length,n_overlap,resp)
     
     
 
-def psd(signal,fs):
+def compute_psd(signal,fs):
     s = rfft(signal)
     f = rfftfreq(len(signal),1/fs)
     power = np.square(np.abs(s))
@@ -157,3 +157,169 @@ def plot_spectra_and_timeseries(st_list,psd_list,f,low_cut,resp):
 
     plt.show()
     
+    
+
+def plot_tilt_psd_ratio(f,psd_ratio):
+    # get indices corresponding to log-spaced frequency vector
+    log_freq = np.logspace(-4,np.log10(np.max(f)),400, endpoint = True)
+    idx_list = []
+    for freq in log_freq:
+        diff = freq-f
+        idx_list.append(np.argmin(np.abs(diff)))
+    idx = np.unique(idx_list)
+
+    # plot the psd ratio 
+    fig,ax = plt.subplots(figsize=(10,7))
+    ax.plot(f[idx],psd_ratio[idx],'k',zorder=1)
+    ax.vlines(1/120,0,1e6,color='darkorange',linestyle='--',zorder=0)
+    ax.text(1/180,1e2,'$f_{corner}$ = '+r'$\frac{1}{120}$s',rotation=90,size=15)
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.set_title('Ratio of PSD (radial / predicted contribution by tilt)')
+    ax.set_ylabel('Ratio')
+    ax.set_xlabel('Frequency (Hz)')
+    ax.set_ylim(1e-4,1e5)
+    plt.show()
+
+    
+def plot_ringdown(st,t_ring_est,t_ring_est_vect,amp_vect,t_ring_obs,decay_amp,resp):
+    starttime = st[0].stats.starttime
+    endtime = st[0].stats.endtime
+    fig, ax = plt.subplots(figsize=(10,7))
+    ax.plot(st[0].data*1000,'k',linewidth=1.5,zorder=2)
+    trace_len = st[0].stats.npts
+    ax.set_xlim(0,trace_len)
+    fs = st[0].stats.sampling_rate
+    num_hours = int(st[0].stats.npts / fs // 3600)
+    ticks = [h*fs*3600 for h in range(num_hours+1)]
+    ax.set_xticks(ticks)
+    tick_times = [starttime.datetime + datetime.timedelta(hours = h+1) for h in range(num_hours)]
+    ticklabels = [tick.strftime("%H:%M") for tick in tick_times]
+    ticklabels.insert(0,starttime.strftime("%Y-%m-%d\n%H:%M"))
+    ax.set_xticklabels(ticklabels)
+    ax.grid(True)
+    if resp =="VEL":
+        ax.set_ylabel("Velocity (mm/s)")
+    if resp =="DISP":
+        ax.set_ylabel("Displacement (mm)")   
+    ax.set_xlabel("Time")
+    ax.tick_params(axis='both', which='major')
+    ax.set_xlim(0,st[0].stats.npts)
+    ax.set_title("Seismic data (" + st[0].stats.station + " " + st[0].stats.channel + ") and estimated ringdown time")
+    [x.set_linewidth(1.5) for x in ax.spines.values()]
+
+    fs = st[0].stats.sampling_rate
+    ax.hlines(decay_amp*1000,0,st[0].stats.npts,'red',linestyle='--',zorder=0)
+    max_time = np.argmax(np.abs(st[0].data))
+#     ax.vlines([max_time,max_time+fs*t_ring_est,fs*t_ring_obs],-0.3,0.3,zorder=0,linestyle='--',linewidth=0.5,colors='grey')
+#     ax.text(np.argmax(np.abs(st[0].data))-2800,-0.315,'$t_{A_{max}}$',fontsize=8)
+#     ax.text(fs*t_ring_est-20000,-0.315,'Pred $t_{ring}$',fontsize=8)
+#     ax.text(fs*t_ring_obs-20000,-0.315,'Obs $t_{ring}$',fontsize=8)
+#     ax.text(trace_len+8000,decay_amp*1000,'$A_{max}e^{-\pi}$')
+    ax.set_ylim(-0.275,0.275)
+    decay_time_vect = [fs*s for s in t_ring_est_vect[0]]
+    ax.plot(max_time+decay_time_vect,-amp_vect,color='C1',linestyle='--')
+    ax.plot(max_time+decay_time_vect,amp_vect,color='C1',linestyle='--')
+    decay_time_vect = [fs*s for s in t_ring_est_vect[1]]
+    ax.plot(max_time+decay_time_vect,-amp_vect,color='C2',linestyle='--')
+    ax.plot(max_time+decay_time_vect,amp_vect,color='C2',linestyle='--')
+    plt.show()
+    
+    
+    
+def windowed_normalized_psd(st,win_size,freq,starttime,endtime):
+    # iterate through time
+    psd_list = []
+    psd_max = []
+    f_list = []
+    for t in range(int((endtime-starttime)//win_size)):
+        st_win = st.copy().trim(starttime=starttime+t*win_size,endtime=starttime+(t+1)*win_size)
+        data = st_win[0].data
+
+        # calculate spectra
+        f, psd = compute_psd(data, fs)
+        above_low_cut = [f>=freq[0]]
+        below_high_cut = [f<=freq[1]]
+        in_band = np.logical_and(above_low_cut,below_high_cut)[0]
+        f_list.append(f[in_band])
+        psd_list.append(psd[in_band])
+        psd_max.append(np.max(psd[in_band]))
+
+    # make a plot
+    fig,ax = plt.subplots(2,1,figsize=(10,10))
+    max_psd = np.max(psd_max)
+    for i in range(len(psd_list)):
+        psd_norm = psd_list[i]/max_psd
+        ax[0].plot(f_list[i],psd_norm-0.1*i)
+        win_start = starttime+i*win_size
+        win_start_string = win_start.datetime.strftime("%H:%M:%S")
+        win_end = starttime+(i+1)*win_size
+        win_end_string = win_end.datetime.strftime("%H:%M:%S")
+        ax[0].text(5.1,-0.1*i-0.01,win_start_string + "-" + win_end_string)
+    #ax.set_xscale('log')
+    #ax.set_yscale('log')
+    ax[0].set_xlim(freq)
+    ax[0].set_xlabel("Frequency (Hz)")
+    ax[0].set_yticks([])
+    ax[0].set_title("Normalized windowed PSD ("+st[0].stats.station+")")
+    ax[1].plot(st[0].data,'k')
+    trace_len = len(st[0].data)
+    ax[1].set_xticks((0,trace_len/4,trace_len/2,3*trace_len/4,trace_len))
+    starttime = st[0].stats.starttime.datetime
+    tick_space = datetime.timedelta(seconds=trace_len/4/fs)
+    ticks = [starttime,starttime+tick_space,starttime+2*tick_space,starttime+3*tick_space,starttime+4*tick_space]
+    ticklabels = [tick for tick in [tick.strftime("%H:%M:%S") for tick in ticks[1:]]]
+    ticklabels.insert(0,starttime.strftime("%Y-%m-%d\n%H:%M"))
+    ax[1].set_xticklabels(ticklabels)
+    ax[1].set_xlim(0,trace_len)
+    plt.tight_layout()
+    plt.show()
+    
+    
+def particle_motion(st,pts_per_frame,components):
+    c1 = st.select(component=components[0])[0].data
+    c2 = st.select(component=components[1])[0].data
+    norm_max = np.max([np.max(np.abs(c1)),np.max(np.abs(c2))])
+    c1_norm = c1/norm_max
+    c2_norm = c2/norm_max
+    fig,ax = plt.subplots(2,1,figsize=(10,10))
+    ax[1].set_xlim((-1,1))
+    ax[1].set_ylim((-1,1))
+
+    # plot the two components against each other
+    c1_win = c1_norm[0:pts_per_frame]
+    c2_win = c2_norm[0:pts_per_frame]
+    particles = np.zeros(pts_per_frame,dtype=[("position", float , 2)])
+    particles["position"][:,0] = c1_win
+    particles["position"][:,1] = c2_win
+    cmap = matplotlib.cm.get_cmap('plasma_r')
+    colors = cmap(np.linspace(0, 1, num = pts_per_frame))
+    scatter=ax[1].scatter(particles["position"][:,0], particles["position"][:,1],c=colors)
+    ax[1].set_xlabel(components[0] + " component")
+    ax[1].set_ylabel(components[1] + " component")
+
+    # plot timeseries
+    t = st[0].times("matplotlib")
+    ax[0].plot(t,c2,'k')
+    ax[0].set_xlim(t[0],t[-1])
+    line = ax[0].axvline(t[pts_per_frame],-1,1,c='r')
+    dateFmt = matplotlib.dates.DateFormatter('%H:%M:%S')
+    ax[0].xaxis.set_major_formatter(dateFmt)
+    ax[0].set_ylabel(components[1] + " displacement (m)")
+    ax[0].set_title(st[0].stats.station + ' particle motion')
+    
+    def update(frame_number):
+        c1_win = c1_norm[frame_number:frame_number+pts_per_frame]
+        c2_win = c2_norm[frame_number:frame_number+pts_per_frame]
+        particles["position"][:,0] = c1_win
+        particles["position"][:,1] = c2_win
+        scatter.set_offsets(particles["position"])
+        line.set_xdata(t[frame_number+pts_per_frame])
+        return scatter, 
+    
+    frames = len(c1)-pts_per_frame-1
+    anim = animation.FuncAnimation(fig, update, frames=frames, interval=1)
+
+    # saving to m4 using ffmpeg writer
+    anim.save('particle_motion_' + st[0].stats.station + '_' + components[0] + '_' + components[1] + '.gif',writer="pillow")
+    plt.close()
