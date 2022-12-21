@@ -167,33 +167,35 @@ def plot_fractures(t,sol,sol_no_coupling,c_r,H_w,L0,L1,c_avg,ylims):
     # get some useful variables
     dLdt = np.gradient(sol[:, 2],t)
     dLdt_no_coupling = np.gradient(sol_no_coupling[:, 0],t)
-
+    ylims.extend([[L0/1000,20],[L0/1000,L1/1000]])
+    
     # plot comparison of solutions with and without coupling
     fig,ax = plt.subplots(4,1,figsize=(8,11),dpi=150)
     fig.patch.set_facecolor('w')
-    ax[0].hlines(t[0],t[-1],0,label='Without fluid coupling',colors='darkorange')
-    ax[0].plot(t, sol[:, 0]-H_w,label='With fluid coupling',c='k')
-    ax[0].set_ylabel('Deflection $\eta$ (m)')
-    ax[0].legend()
-    ax[0].set_title("Deflection $\eta$ from hydrostatic water level through time")
-    ax[1].plot(t, dLdt_no_coupling/c_r,label='Without fluid coupling',c='darkorange')
+    ax[0].hlines(t[0],t[-1],0,label='Without fluid coupling',colors='orangered')
+    ax[0].plot(t, (sol[:, 0]-H_w)*100,label='With fluid coupling',c='k')
+    ax[0].set_ylabel('Deflection $\eta$ (cm)',size=12)
+    ax[0].legend(prop={'size': 10})
+    ax[0].set_title("B. Deflection $\eta$ from hydrostatic water level through time",loc='left',size=17)
+    ax[1].plot(t, dLdt_no_coupling/c_r,label='Without fluid coupling',c='orangered')
     ax_coupling = ax[1].twinx()
     ax_coupling.plot(t, dLdt/c_r,label='With fluid coupling',c='k')
-    ax[1].set_ylabel('$dLdt\;/\;c_r$',c='k')
-    ax_coupling.set_ylabel('$dLdt\;/\;c_r$',c='k')
-    ax[1].set_title("Propagation rate $dLdt$ through time")
-    ax[2].plot(t, sol_no_coupling[:, 0]/1e3, label='Without fluid coupling',c='darkorange')
+    ax[1].set_ylabel('$dLdt\;/\;c_r$',c='orangered',size=12)
+    plt.setp(ax[1].get_yticklabels(), color="orangered",size=12)
+    ax_coupling.set_ylabel('$dLdt\;/\;c_r$',c='k',size=12)
+    ax[1].set_title("C. Propagation rate $dLdt$ through time",loc='left',size=17)
+    ax[2].plot(t, sol_no_coupling[:, 0]/1e3, label='Without fluid coupling',c='orangered')
     ax[2].plot(t, sol[:, 2]/1e3, label='With fluid coupling',c='k')
-    ax[2].set_ylabel('Length $L$ (km)')
-    ax[2].set_title("Fracture length $L$ through time")
+    ax[2].set_ylabel('Length $L$ (km)',size=12)
+    ax[2].set_title("D. Fracture length $L$ through time",loc='left',size=17)
     ax[0].grid()
     ax[1].grid()
     ax[2].grid()
     ax[0].set_ylim(ylims[0])
     ax[1].set_ylim(ylims[1])
-    ax[2].set_ylim(ylims[2])
-    ax_coupling.set_ylim([0,np.max(dLdt/c_r)*1.5])
-    ax[3].set_ylim(ylims[3])
+    ax_coupling.set_ylim(ylims[2])
+    ax[2].set_ylim(ylims[3])
+    ax[3].set_ylim(ylims[4])
     ax[0].set_xlim([0,t[-1]])
     ax[1].set_xlim([0,t[-1]])
     ax[2].set_xlim([0,t[-1]])
@@ -207,22 +209,22 @@ def plot_fractures(t,sol,sol_no_coupling,c_r,H_w,L0,L1,c_avg,ylims):
     t_zoom = t[idx]
     
     # plot zoom between L0 and L1
-    ax[3].plot(t_zoom, sol_no_coupling[:, 0]/1e3, label='Without fluid coupling',c='darkorange')
+    ax[3].plot(t_zoom, sol_no_coupling[:, 0]/1e3, label='Without fluid coupling',c='orangered')
     ax[3].plot(t_zoom, sol[:, 2]/1e3, label='With fluid coupling',c='k')
-    ax[3].set_ylabel('Length $L$ (km)')
+    ax[3].set_ylabel('Length $L$ (km)',size=12)
     ax[3].grid()
     ax[3].set_xlim([0,t_zoom[-1]])
-    ax[3].set_title("Fracture length $L$ through time over " + str(np.round(t_zoom[-1],0)).split(".")[0] + " s")
-    ax[3].set_xlabel('Time (seconds)')
+    ax[3].set_title("E. Fracture length $L$ through time over " + str(np.round(t_zoom[-1],0)).split(".")[0] + " s",loc='left',size=17)
+    ax[3].set_xlabel('Time (seconds)',size=12)
     
     # add average speed line
     ax[3].plot(t_zoom,L0/1000+t_zoom*c_avg/1000,linestyle='--',dashes=(4,4),color='purple')
     theta = np.arctan((L1-L0)/1000/t_zoom[-1])*180/np.pi
     trans_angle = ax[3].transData.transform_angles(np.array((theta,)),np.array((100, 8)).reshape((1, 2)))[0]
-    ax[3].text(100,8,"$c_{avg}$ = " + str(c_avg) + ' m/s',c='purple',rotation=trans_angle)
+    ax[3].text(100,8,"$c_{avg}$ = " + str(np.round(c_avg,1)) + ' m/s',c='purple',size=12,rotation=trans_angle)
     
     # highlight L0 to L1
-    rect = Rectangle((0, ylims[2][0]), t_zoom[-1]-t_zoom[0], ylims[2][1]-ylims[2][0], linewidth=0, facecolor='r',alpha=0.05,zorder=0)
+    rect = Rectangle((0, ylims[3][0]), t_zoom[-1]-t_zoom[0], ylims[3][1]-ylims[3][0], linewidth=0, facecolor='r',alpha=0.05,zorder=0)
     ax[2].axvline(t_zoom[-1],linewidth=0.75,linestyle='--',dashes=(4,4),color='k')
     ax[2].add_patch(rect)
     
@@ -242,4 +244,4 @@ def plot_fractures(t,sol,sol_no_coupling,c_r,H_w,L0,L1,c_avg,ylims):
     
     # display plot
     plt.tight_layout()
-    plt.savefig("outputs/figures/fracture_model.png",bbox_inches="tight")
+    plt.savefig("outputs/figures/fracture_model.png",bbox_inches="tight",dpi=200)
