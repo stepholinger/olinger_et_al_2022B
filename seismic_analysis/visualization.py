@@ -110,7 +110,7 @@ def plot_spectra_and_timeseries(st_list,psd_list,f,low_cut,resp):
     ax[0].set_ylim(1e-2,1e12)
     ax[0].set_xlim(low_cut,10)
     ax[0].set_xlabel('Frequency [Hz]')
-    ax[0].set_title("Comparison of PSD",fontsize=15)
+    ax[0].set_title("A. Comparison of PSD",fontsize=15,loc='left')
 
     # plot rift timeseries on the right panel
     fs = st_list[0][0].stats.sampling_rate
@@ -125,7 +125,7 @@ def plot_spectra_and_timeseries(st_list,psd_list,f,low_cut,resp):
     ticklabels.insert(0,starttime.strftime("%Y-%m-%d\n%H:%M"))
     ax[1].set_xticklabels(ticklabels)
     ax[1].set_xlabel('Time')
-    ax[1].set_title("May 9 Riftquake",fontsize=15)
+    ax[1].set_title("B. May 9 Riftquake",fontsize=15,loc='left')
 
     # plot scotia quake timeseries on the right panel
     trace_len = len(st_list[2][0].data)
@@ -139,7 +139,7 @@ def plot_spectra_and_timeseries(st_list,psd_list,f,low_cut,resp):
     ticklabels.insert(0,starttime.strftime("%Y-%m-%d\n%H:%M"))
     ax[2].set_xticklabels(ticklabels)
     ax[2].set_xlabel('Time')
-    ax[2].set_title("Scotia Sea Earthquake",fontsize=15)
+    ax[2].set_title("C. Scotia Sea Earthquake",fontsize=15,loc='left')
 
     ax[0].grid()
     ax[1].grid()
@@ -155,7 +155,7 @@ def plot_spectra_and_timeseries(st_list,psd_list,f,low_cut,resp):
         ax[1].set_ylabel('Displacement [mm]')
         ax[2].set_ylabel('Displacement [mm]')
 
-    plt.show()
+    plt.savefig('outputs/figures/spectra_comparison.png',dpi=200)
     
     
 

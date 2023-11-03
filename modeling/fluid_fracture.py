@@ -117,6 +117,7 @@ def model_fracture_stopping(y, t, epsilon, L1, H_i, Rxx, w0):
     sigma = rho_i*g*H_i/2 - rho_w*g/(2*H_i)*eta**2
     sigma_sum = Rxx - sigma
     K_i = stress_intensity(L,sigma_sum)
+    #print(K_i)
     
     # use stress intensity factor to determine if crack propagates
     if L < L1:
@@ -180,10 +181,10 @@ def plot_fractures(t,sol,sol_no_coupling,c_r,H_w,L0,L1,c_avg,ylims):
     ax[1].plot(t, dLdt_no_coupling/c_r,label='Without fluid coupling',c='orangered')
     ax_coupling = ax[1].twinx()
     ax_coupling.plot(t, dLdt/c_r,label='With fluid coupling',c='k')
-    ax[1].set_ylabel('$dLdt\;/\;c_r$',c='orangered',size=12)
+    ax[1].set_ylabel('$dL/dt\;\;/\;\;c_r$',c='orangered',size=12)
     plt.setp(ax[1].get_yticklabels(), color="orangered",size=12)
-    ax_coupling.set_ylabel('$dLdt\;/\;c_r$',c='k',size=12)
-    ax[1].set_title("C. Propagation rate $dLdt$ through time",loc='left',size=17)
+    ax_coupling.set_ylabel('$dL/dt\;\;/\;\;c_r$',c='k',size=12)
+    ax[1].set_title("C. Propagation rate $dL/dt$ through time",loc='left',size=17)
     ax[2].plot(t, sol_no_coupling[:, 0]/1e3, label='Without fluid coupling',c='orangered')
     ax[2].plot(t, sol[:, 2]/1e3, label='With fluid coupling',c='k')
     ax[2].set_ylabel('Length $L$ (km)',size=12)
@@ -245,3 +246,74 @@ def plot_fractures(t,sol,sol_no_coupling,c_r,H_w,L0,L1,c_avg,ylims):
     # display plot
     plt.tight_layout()
     plt.savefig("outputs/figures/fracture_model.png",bbox_inches="tight",dpi=200)
+    
+def Rxx_sensitivity(t,sol,c_r,L0,Rxx,Rxx0):
+    fig,ax = plt.subplots(1,1,figsize=(8,4),dpi=150)
+    fig.patch.set_facecolor('w')
+    for i in range(len(sol)):
+        # get some useful variables
+        dLdt = np.gradient(sol[i][:, 2],t)
+        c_r_ind = np.where([dLdt/c_r>0.99][0])[0]
+        if np.sum(c_r_ind)>0:
+            dLdt[c_r_ind[0]:] = np.nan
+
+        
+        # plot comparison of solutions with and without coupling
+        ax.plot(t, dLdt/c_r,label="$R_{xx}^0+$"+str(int(Rxx[i]-Rxx0))+ " Pa")
+        ax.legend(prop={'size': 10},loc="lower right")
+        ax.set_ylabel('$dLdt\;/\;c_r$',size=12)
+        ax.set_xlabel('Time (s)')
+        ax.set_xlim(0,max(t))
+        ax.set_ylim(0,1)
+        ax.set_title("Rupture speed under varying stress ($R_{xx}^0$ ="+str(int(Rxx0))+" Pa)",loc='left',size=17)
+
+    # display plot
+    plt.tight_layout()
+    plt.savefig("outputs/figures/fracture_Rxx_sensitivity.png",bbox_inches="tight",dpi=200)
+    
+def thickness_sensitivity(t,sol_vect,c_r,H_i_vect,L0,Rxx):
+    fig,ax = plt.subplots(1,1,figsize=(8,4),dpi=150)
+    fig.patch.set_facecolor('w')
+    for i in range(len(sol_vect)):
+        # get some useful variables
+        dLdt = np.gradient(sol_vect[i][:, 2],t)
+        c_r_ind = np.where([dLdt/c_r>0.99][0])[0]
+        if np.sum(c_r_ind)>0:
+            dLdt[c_r_ind[0]:] = np.nan
+            
+        # plot comparison of solutions with and without coupling
+        ax.plot(t, dLdt/c_r,label="$H_i$="+str(int(H_i_vect[i]))+ " m")
+        ax.legend(prop={'size': 10},loc="lower right")
+        ax.set_ylabel('$dLdt\;/\;c_r$',size=12)
+        ax.set_xlabel('Time (s)')
+        ax.set_xlim(0,max(t))
+        ax.set_ylim(0,1)
+        ax.set_title("Rupture speed in varying ice thickness",loc='left',size=17)
+
+    # display plot
+    plt.tight_layout()
+    plt.savefig("outputs/figures/fracture_H_i_sensitivity.png",bbox_inches="tight",dpi=200)
+    
+
+def depth_sensitivity(t,sol_vect,c_r,H_c_vect,L0,Rxx):
+    fig,ax = plt.subplots(1,1,figsize=(8,4),dpi=150)
+    fig.patch.set_facecolor('w')
+    for i in range(len(sol_vect)):
+        # get some useful variables
+        dLdt = np.gradient(sol_vect[i][:, 2],t)
+        c_r_ind = np.where([dLdt/c_r>0.99][0])[0]
+        if np.sum(c_r_ind)>0:
+            dLdt[c_r_ind[0]:] = np.nan
+            
+        # plot comparison of solutions with and without coupling
+        ax.plot(t, dLdt/c_r,label="$H_c + H_w$="+str(int(H_c_vect[i]))+ " m")
+        ax.legend(prop={'size': 10},loc="lower right")
+        ax.set_ylabel('$dLdt\;/\;c_r$',size=12)
+        ax.set_xlabel('Time (s)')
+        ax.set_xlim(0,max(t))
+        ax.set_ylim(0,1)
+        ax.set_title("Rupture speed in varying water depth",loc='left',size=17)
+
+    # display plot
+    plt.tight_layout()
+    plt.savefig("outputs/figures/fracture_H_c_sensitivity.png",bbox_inches="tight",dpi=200)

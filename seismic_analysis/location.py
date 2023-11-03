@@ -614,7 +614,7 @@ def get_grid(grid_length,grid_height,step,t0,t_step):
 
 
 
-def get_arrival(tr_ref,tr,method=""):
+def get_arrival(tr_ref,tr,method):
 # iterate through regional stations
 
     max_shift = len(tr_ref)*2
@@ -632,7 +632,7 @@ def get_arrival(tr_ref,tr,method=""):
 
 
 
-def get_arrivals(ref_station,st,stations,components):
+def get_arrivals(ref_station,st,stations,components,method=""):
     arrivals = []
     xcorr_coefs = []
     for station in stations:
@@ -641,7 +641,7 @@ def get_arrivals(ref_station,st,stations,components):
         for component in components:
             tr_ref = st.select(station="PIG2",component=component)[0]
             tr = st.select(station=station,component=component)[0]
-            arrival, xcorr_coef = get_arrival(tr_ref,tr,"envelope")
+            arrival, xcorr_coef = get_arrival(tr_ref,tr,method)
             station_arrivals.append(arrival)
             station_xcorr_coef.append(xcorr_coef)
         arrivals.append(station_arrivals)
@@ -1037,7 +1037,7 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,st_high,backazim
             sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
             sm.set_array([])
             cbar = fig.colorbar(sm, cax=c_axis, orientation='vertical')
-            cbar.ax.invert_yaxis()
+            #cbar.ax.invert_yaxis()
             cbar.ax.tick_params(labelsize=45)
             cbar.ax.set_ylabel('log10(RMSE)',fontsize=45)
             
@@ -1168,8 +1168,8 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,st_high,backazim
     endtime = obspy.UTCDateTime(2012,5,9,20)
     ylims = ax_seismic.get_ylim()
     rect = Rectangle((starttime, ylims[0]), endtime-starttime, ylims[1]-ylims[0], linewidth=0, facecolor='r',alpha=0.1,zorder=0)
-    ax_seismic.axvline(starttime,linestyle='--',dashes=(7, 7))
-    ax_seismic.axvline(endtime,linestyle='--',dashes=(7, 7))
+    ax_seismic.axvline(starttime,linestyle='--',dashes=(7, 7),c='k',linewidth=2)
+    ax_seismic.axvline(endtime,linestyle='--',dashes=(7, 7),c='k',linewidth=2)
     ax_seismic.add_patch(rect)
     
     # display just the event (low frequency)
@@ -1229,9 +1229,9 @@ def plot_imagery_seismic_location(background,tsx,plot_bounds,st,st_high,backazim
     
     # highlight event window
     ylims = ax_seismic2.get_ylim()
-    rect = Rectangle((starttime, ylims[0]), endtime-starttime, ylims[1]-ylims[0], linewidth=0, facecolor='r',alpha=0.1,zorder=0)
-    ax_seismic2.axvline(starttime,linestyle='--',dashes=(7, 7))
-    ax_seismic2.axvline(endtime,linestyle='--',dashes=(7, 7))
+    rect = Rectangle((starttime, ylims[0]), endtime-starttime, ylims[1]-ylims[0], linewidth=0, facecolor='gold',alpha=0.1,zorder=0)
+    ax_seismic2.axvline(starttime,linestyle='--',dashes=(7, 7),c='k',linewidth=2)
+    ax_seismic2.axvline(endtime,linestyle='--',dashes=(7, 7),c='k',linewidth=2)
     ax_seismic2.add_patch(rect)
     
     # draw lines connecting the highlighted area of first data plot to second plot
